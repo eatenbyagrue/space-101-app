@@ -1,0 +1,42 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:www.space101fm.org)",
+      "WebFetch(domain:streema.com)",
+      "Bash(for dir:*)",
+      "Bash(do cp:*)",
+      "Bash(cp /home/matthewbaldwin/projects/space-101-app/app/src/main/res/mipmap-hdpi/ic_launcher.xml /home/matthewbaldwin/projects/space-101-app/app/src/main/res/mipmap-$dir/ic_launcher_round.xml)",
+      "Bash(done)",
+      "Read(//home/matthewbaldwin/Android/**)",
+      "Bash(java -version)",
+      "Read(//opt/**)",
+      "Read(//usr/local/**)",
+      "Read(//home/matthewbaldwin/**)",
+      "Read(//usr/lib/**)",
+      "Read(//snap/bin/**)",
+      "Bash(apt list:*)",
+      "Bash(JAVA_HOME=/snap/android-studio/current/jbr)",
+      "Bash(export JAVA_HOME)",
+      "Bash(export PATH=$JAVA_HOME/bin:$PATH)",
+      "Bash(curl -sL \"https://raw.githubusercontent.com/gradle/gradle/v8.6.0/gradle/wrapper/gradle-wrapper.jar\" -o gradle/wrapper/gradle-wrapper.jar)",
+      "Bash(chmod +x gradlew)",
+      "Bash(sed -i 's|APP_HOME=.*|APP_HOME=\"\"$\\(cd \"\"$\\(dirname \"\"$0\"\"\\)\"\" \\\\&\\\\& pwd\\)\"\"\\\\n|' gradlew)",
+      "Bash(chmod:*)",
+      "Bash(export JAVA_HOME=/snap/android-studio/current/jbr)",
+      "Bash(export ANDROID_HOME=/home/matthewbaldwin/Android/Sdk)",
+      "Bash(./gradlew assembleDebug)",
+      "Bash(python3 -c \"from PIL import Image; print\\(''PIL ok''\\)\")",
+      "Bash(python3 -c \"import struct, zlib; print\\(''stdlib ok''\\)\")",
+      "Bash(python3:*)",
+      "Read(//dev/**)",
+      "Read(//proc/**)",
+      "Bash(/home/matthewbaldwin/Android/Sdk/platform-tools/adb devices:*)",
+      "Bash(/home/matthewbaldwin/Android/Sdk/platform-tools/adb -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null)",
+      "Bash(curl -v --max-time 10 \"http://kmgp.broadcasttool.stream/xstream.mp3\")",
+      "Bash(/home/matthewbaldwin/Android/Sdk/platform-tools/adb logcat:*)",
+      "Bash(/home/matthewbaldwin/Android/Sdk/platform-tools/adb shell:*)",
+      "Bash(/home/matthewbaldwin/Android/Sdk/platform-tools/adb install:*)"
+    ]
+  }
+}
