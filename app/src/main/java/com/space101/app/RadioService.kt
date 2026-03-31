@@ -14,7 +14,12 @@ import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Binder
 import android.os.IBinder
+import android.support.v4.media.MediaMetadataCompat
+import android.support.v4.media.session.MediaSessionCompat
+import android.support.v4.media.session.PlaybackStateCompat
+import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.media.app.NotificationCompat.MediaStyle
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -25,8 +30,6 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.extractor.metadata.icy.IcyInfo
-import androidx.media3.session.MediaSession
-import android.util.Log
 
 class RadioService : Service() {
 
@@ -39,7 +42,7 @@ class RadioService : Service() {
     }
 
     private var player: ExoPlayer? = null
-    private var mediaSession: MediaSession? = null
+    private var mediaSession: MediaSessionCompat? = null
     private var pausedDueToNoise = false
     private val binder = RadioBinder()
 
@@ -71,6 +74,18 @@ class RadioService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        mediaSession = MediaSessionCompat(this, "Space101").apply {
+            setCallback(object : MediaSessionCompat.Callback() {
+                override fun onPlay() { player?.play() }
+                override fun onPause() {
+                    pausedDueToNoise = false
+                    player?.pause()
+                }
+                override fun onStop() { stop() }
+            })
+            setPlaybackState(buildPlaybackState(PlaybackStateCompat.STATE_NONE))
+            isActive = true
+        }
         initPlayer()
         registerReceiver(noisyReceiver, IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY))
         getSystemService(AudioManager::class.java).registerAudioDeviceCallback(audioDeviceCallback, null)
@@ -93,11 +108,25 @@ class RadioService : Service() {
             exo.setMediaSource(mediaSource)
             exo.addListener(object : Player.Listener {
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
-                    updateNotification(isPlaying)
-                    playerStateCallback?.invoke(isPlaying, false)
+                    val loading = exo.playbackState == Player.STATE_BUFFERING
+                    val compatState = when {
+                        loading -> PlaybackStateCompat.STATE_BUFFERING
+                        isPlaying -> PlaybackStateCompat.STATE_PLAYING
+                        else -> PlaybackStateCompat.STATE_PAUSED
+                    }
+                    mediaSession?.setPlaybackState(buildPlaybackState(compatState))
+                    updateNotification(isPlaying, loading)
+                    playerStateCallback?.invoke(isPlaying, loading)
                 }
                 override fun onPlaybackStateChanged(state: Int) {
                     val loading = state == Player.STATE_BUFFERING
+                    val compatState = when {
+                        loading -> PlaybackStateCompat.STATE_BUFFERING
+                        exo.isPlaying -> PlaybackStateCompat.STATE_PLAYING
+                        else -> PlaybackStateCompat.STATE_PAUSED
+                    }
+                    mediaSession?.setPlaybackState(buildPlaybackState(compatState))
+                    updateNotification(exo.isPlaying, loading)
                     playerStateCallback?.invoke(exo.isPlaying, loading)
                 }
                 override fun onMetadata(metadata: Metadata) {
@@ -113,8 +142,12 @@ class RadioService : Service() {
                 }
             })
         }
-        mediaSession = MediaSession.Builder(this, player!!).build()
     }
+
+    private fun buildPlaybackState(state: Int) = PlaybackStateCompat.Builder()
+        .setActions(PlaybackStateCompat.ACTION_PLAY_PAUSE or PlaybackStateCompat.ACTION_STOP)
+        .setState(state, 0, 1f)
+        .build()
 
     var playerStateCallback: ((isPlaying: Boolean, isLoading: Boolean) -> Unit)? = null
     var metadataCallback: ((title: String, artist: String) -> Unit)? = null
@@ -128,8 +161,12 @@ class RadioService : Service() {
         val parts = raw.split(" - ", limit = 2)
         currentArtist = if (parts.size == 2) parts[0].trim() else ""
         currentTitle = if (parts.size == 2) parts[1].trim() else raw.trim()
+        mediaSession?.setMetadata(MediaMetadataCompat.Builder()
+            .putString(MediaMetadataCompat.METADATA_KEY_TITLE, currentTitle)
+            .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, currentArtist)
+            .build())
         metadataCallback?.invoke(currentTitle, currentArtist)
-        updateNotification(player?.isPlaying == true)
+        updateNotification(player?.isPlaying == true, player?.playbackState == Player.STATE_BUFFERING)
     }
 
     fun play() {
@@ -137,11 +174,12 @@ class RadioService : Service() {
             it.prepare()
             it.play()
         }
-        startForeground(NOTIFICATION_ID, buildNotification(true))
+        startForeground(NOTIFICATION_ID, buildNotification(isPlaying = false, isLoading = true))
     }
 
     fun stop() {
         pausedDueToNoise = false
+        mediaSession?.setPlaybackState(buildPlaybackState(PlaybackStateCompat.STATE_STOPPED))
         player?.stop()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -159,12 +197,12 @@ class RadioService : Service() {
         return START_NOT_STICKY
     }
 
-    private fun updateNotification(isPlaying: Boolean) {
+    private fun updateNotification(isPlaying: Boolean, isLoading: Boolean = false) {
         val manager = getSystemService(NotificationManager::class.java)
-        manager.notify(NOTIFICATION_ID, buildNotification(isPlaying))
+        manager.notify(NOTIFICATION_ID, buildNotification(isPlaying, isLoading))
     }
 
-    private fun buildNotification(isPlaying: Boolean): Notification {
+    private fun buildNotification(isPlaying: Boolean, isLoading: Boolean = false): Notification {
         val openIntent = PendingIntent.getActivity(
             this, 0,
             Intent(this, MainActivity::class.java),
@@ -177,18 +215,25 @@ class RadioService : Service() {
         )
 
         val notifText = when {
-            !isPlaying -> "Buffering..."
-            currentTitle.isNotEmpty() && currentArtist.isNotEmpty() -> "$currentArtist — $currentTitle"
-            currentTitle.isNotEmpty() -> currentTitle
-            else -> "Live"
+            isLoading -> "Buffering..."
+            isPlaying && currentTitle.isNotEmpty() && currentArtist.isNotEmpty() -> "$currentArtist — $currentTitle"
+            isPlaying && currentTitle.isNotEmpty() -> currentTitle
+            isPlaying -> "Live"
+            else -> "Space 101.1 FM"
         }
+
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Space 101.1 FM")
             .setContentText(notifText)
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentIntent(openIntent)
             .addAction(android.R.drawable.ic_media_pause, "Stop", stopIntent)
-            .setOngoing(isPlaying)
+            .setStyle(MediaStyle()
+                .setMediaSession(mediaSession?.sessionToken)
+                .setShowActionsInCompactView(0))
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setBadgeIconType(NotificationCompat.BADGE_ICON_NONE)
+            .setOngoing(isPlaying || isLoading)
             .setSilent(true)
             .build()
     }
