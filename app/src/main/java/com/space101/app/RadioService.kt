@@ -5,7 +5,13 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
 import android.os.Binder
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
@@ -19,6 +25,7 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.extractor.metadata.icy.IcyInfo
+import androidx.media3.session.MediaSession
 import android.util.Log
 
 class RadioService : Service() {
@@ -32,7 +39,28 @@ class RadioService : Service() {
     }
 
     private var player: ExoPlayer? = null
+    private var mediaSession: MediaSession? = null
+    private var pausedDueToNoise = false
     private val binder = RadioBinder()
+
+    private val noisyReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
+                pausedDueToNoise = player?.isPlaying == true || player?.playbackState == Player.STATE_BUFFERING
+                player?.pause()
+            }
+        }
+    }
+
+    private val audioDeviceCallback = object : AudioDeviceCallback() {
+        override fun onAudioDevicesAdded(addedDevices: Array<AudioDeviceInfo>) {
+            val btReconnected = addedDevices.any { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP }
+            if (btReconnected && pausedDueToNoise) {
+                pausedDueToNoise = false
+                player?.play()
+            }
+        }
+    }
 
     inner class RadioBinder : Binder() {
         fun getService(): RadioService = this@RadioService
@@ -44,6 +72,8 @@ class RadioService : Service() {
         super.onCreate()
         createNotificationChannel()
         initPlayer()
+        registerReceiver(noisyReceiver, IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY))
+        getSystemService(AudioManager::class.java).registerAudioDeviceCallback(audioDeviceCallback, null)
     }
 
     private fun initPlayer() {
@@ -83,6 +113,7 @@ class RadioService : Service() {
                 }
             })
         }
+        mediaSession = MediaSession.Builder(this, player!!).build()
     }
 
     var playerStateCallback: ((isPlaying: Boolean, isLoading: Boolean) -> Unit)? = null
@@ -110,6 +141,7 @@ class RadioService : Service() {
     }
 
     fun stop() {
+        pausedDueToNoise = false
         player?.stop()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -173,6 +205,10 @@ class RadioService : Service() {
     }
 
     override fun onDestroy() {
+        unregisterReceiver(noisyReceiver)
+        getSystemService(AudioManager::class.java).unregisterAudioDeviceCallback(audioDeviceCallback)
+        mediaSession?.release()
+        mediaSession = null
         player?.release()
         player = null
         super.onDestroy()
