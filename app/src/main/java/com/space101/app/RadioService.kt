@@ -9,6 +9,8 @@ import android.content.Intent
 import android.os.Binder
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Metadata
 import androidx.media3.common.Player
@@ -17,6 +19,7 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.extractor.metadata.icy.IcyInfo
+import android.util.Log
 
 class RadioService : Service() {
 
@@ -50,7 +53,13 @@ class RadioService : Service() {
             DefaultDataSource.Factory(this, httpDataSourceFactory)
         ).createMediaSource(MediaItem.fromUri(STREAM_URL))
 
+        val audioAttributes = AudioAttributes.Builder()
+            .setUsage(C.USAGE_MEDIA)
+            .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+            .build()
+
         player = ExoPlayer.Builder(this).build().also { exo ->
+            exo.setAudioAttributes(audioAttributes, /* handleAudioFocus= */ true)
             exo.setMediaSource(mediaSource)
             exo.addListener(object : Player.Listener {
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -62,8 +71,10 @@ class RadioService : Service() {
                     playerStateCallback?.invoke(exo.isPlaying, loading)
                 }
                 override fun onMetadata(metadata: Metadata) {
+                    Log.d("RadioService", "onMetadata fired, length=${metadata.length()}")
                     for (i in 0 until metadata.length()) {
                         val entry = metadata.get(i)
+                        Log.d("RadioService", "metadata[$i] type=${entry.javaClass.simpleName}, value=$entry")
                         if (entry is IcyInfo && entry.title != null) {
                             parseIcyTitle(entry.title!!)
                             break
