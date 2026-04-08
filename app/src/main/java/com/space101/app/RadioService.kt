@@ -13,7 +13,9 @@ import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Binder
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
@@ -44,6 +46,8 @@ class RadioService : Service() {
     private var player: ExoPlayer? = null
     private var mediaSession: MediaSessionCompat? = null
     private var pausedDueToNoise = false
+    private var reconnectAttempts = 0
+    private val reconnectHandler = Handler(Looper.getMainLooper())
     private val binder = RadioBinder()
 
     private val noisyReceiver = object : BroadcastReceiver() {
@@ -59,8 +63,14 @@ class RadioService : Service() {
         override fun onAudioDevicesAdded(addedDevices: Array<AudioDeviceInfo>) {
             val btReconnected = addedDevices.any { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP }
             if (btReconnected && pausedDueToNoise) {
-                pausedDueToNoise = false
-                player?.play()
+                // Delay so we request audio focus after other apps (e.g. Spotify) have resumed,
+                // ensuring we win the audio focus race on reconnect.
+                Handler(Looper.getMainLooper()).postDelayed({
+                    if (pausedDueToNoise) {
+                        pausedDueToNoise = false
+                        player?.play()
+                    }
+                }, 1500)
             }
         }
     }
@@ -75,6 +85,10 @@ class RadioService : Service() {
         super.onCreate()
         createNotificationChannel()
         mediaSession = MediaSessionCompat(this, "Space101").apply {
+            setMetadata(MediaMetadataCompat.Builder()
+                .putString(MediaMetadataCompat.METADATA_KEY_TITLE, "Space 101.1 FM")
+                .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, "KMGP · Seattle")
+                .build())
             setCallback(object : MediaSessionCompat.Callback() {
                 override fun onPlay() { player?.play() }
                 override fun onPause() {
@@ -103,7 +117,9 @@ class RadioService : Service() {
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
             .build()
 
-        player = ExoPlayer.Builder(this).build().also { exo ->
+        player = ExoPlayer.Builder(this)
+            .setWakeMode(C.WAKE_MODE_NETWORK)
+            .build().also { exo ->
             exo.setAudioAttributes(audioAttributes, /* handleAudioFocus= */ true)
             exo.setMediaSource(mediaSource)
             exo.addListener(object : Player.Listener {
@@ -125,9 +141,22 @@ class RadioService : Service() {
                         exo.isPlaying -> PlaybackStateCompat.STATE_PLAYING
                         else -> PlaybackStateCompat.STATE_PAUSED
                     }
+                    if (state == Player.STATE_READY) reconnectAttempts = 0
                     mediaSession?.setPlaybackState(buildPlaybackState(compatState))
                     updateNotification(exo.isPlaying, loading)
                     playerStateCallback?.invoke(exo.isPlaying, loading)
+                }
+                override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                    Log.e("RadioService", "Player error (attempt $reconnectAttempts): ${error.message}")
+                    val delayMs = minOf(1000L shl reconnectAttempts, 30_000L)
+                    reconnectAttempts++
+                    reconnectHandler.postDelayed({
+                        if (player?.playbackState == Player.STATE_IDLE ||
+                            player?.playbackState == Player.STATE_ENDED) {
+                            player?.prepare()
+                            player?.play()
+                        }
+                    }, delayMs)
                 }
                 override fun onMetadata(metadata: Metadata) {
                     Log.d("RadioService", "onMetadata fired, length=${metadata.length()}")
@@ -171,7 +200,9 @@ class RadioService : Service() {
 
     fun play() {
         player?.let {
-            it.prepare()
+            if (it.playbackState == Player.STATE_IDLE || it.playbackState == Player.STATE_ENDED) {
+                it.prepare()
+            }
             it.play()
         }
         startForeground(NOTIFICATION_ID, buildNotification(isPlaying = false, isLoading = true))
@@ -179,6 +210,8 @@ class RadioService : Service() {
 
     fun stop() {
         pausedDueToNoise = false
+        reconnectAttempts = 0
+        reconnectHandler.removeCallbacksAndMessages(null)
         mediaSession?.setPlaybackState(buildPlaybackState(PlaybackStateCompat.STATE_STOPPED))
         player?.stop()
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -247,6 +280,11 @@ class RadioService : Service() {
             description = "Space 101.1 FM playback controls"
         }
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        stop()
+        super.onTaskRemoved(rootIntent)
     }
 
     override fun onDestroy() {
