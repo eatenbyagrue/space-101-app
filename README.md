@@ -4,17 +4,8 @@ An unofficial Android app for streaming [Space 101.1 FM](https://www.space101fm.
 
 ## About
 
-No-frills streaming app. One play button, two links. No ads, no tracking, no data collection of any kind — and it's open source so you can verify that.
+No-frills streaming app. One play button, two links. No ads, no tracking, no data collection.
 
-**What it does:**
-- Streams Space 101.1 FM live
-- Shows live track/artist info (pending station API access)
-- Lock screen and notification controls
-- Shows on your car's display when connected via Bluetooth
-- Pauses when something else needs audio (calls, speech-to-text, other apps)
-- Pauses when Bluetooth disconnects (e.g. you stop the car); resumes when you reconnect
-- Stops when you close the app
-- Auto-reconnects if the stream drops
 
 ## Sideloading
 
