@@ -200,9 +200,8 @@ class RadioService : Service() {
 
     fun play() {
         player?.let {
-            if (it.playbackState == Player.STATE_IDLE || it.playbackState == Player.STATE_ENDED) {
-                it.prepare()
-            }
+            it.stop()    // discard any paused/buffered state
+            it.prepare() // reconnect to live stream from now
             it.play()
         }
         startForeground(NOTIFICATION_ID, buildNotification(isPlaying = false, isLoading = true))
