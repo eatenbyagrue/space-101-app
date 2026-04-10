@@ -113,7 +113,7 @@ class MainActivity : AppCompatActivity() {
             isPlaying -> {
                 binding.btnPlayPause.visibility = View.VISIBLE
                 binding.progressBar.visibility = View.GONE
-                binding.btnPlayPause.setImageResource(android.R.drawable.ic_media_pause)
+                binding.btnPlayPause.setImageResource(R.drawable.ic_media_stop)
                 binding.tvStatus.text = "Live"
             }
             else -> {
