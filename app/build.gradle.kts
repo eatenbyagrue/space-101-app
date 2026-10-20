@@ -13,8 +13,8 @@ android {
         applicationId = "com.space101.app"
         minSdk = 24
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "0.2.0"
     }
 
     // Release signing reads keystore.properties (gitignored; key lives outside the repo).
