@@ -1,7 +1,9 @@
 package com.space101.app
 
+import android.animation.AnimatorSet
+import android.animation.ObjectAnimator
+import android.animation.ValueAnimator
 import android.content.ComponentName
-import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
@@ -13,6 +15,10 @@ import android.view.View
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import com.space101.app.RadioService.Status
 import com.space101.app.databinding.ActivityMainBinding
 
 class MainActivity : AppCompatActivity() {
@@ -20,80 +26,68 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private var radioService: RadioService? = null
     private var serviceBound = false
+    private var pulseAnimator: AnimatorSet? = null
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, binder: IBinder) {
-            radioService = (binder as RadioService.RadioBinder).getService()
-            serviceBound = true
-            radioService?.playerStateCallback = { isPlaying, isLoading ->
-                runOnUiThread { updateUI(isPlaying, isLoading) }
-            }
-            radioService?.metadataCallback = { title, artist ->
-                runOnUiThread { updateTrackInfo(title, artist) }
-            }
-            updateUI(radioService?.isPlaying() == true, radioService?.isLoading() == true)
+            val service = (binder as RadioService.RadioBinder).getService()
+            radioService = service
+            // Service callbacks are delivered on the main thread.
+            service.statusCallback = ::updateUI
+            service.metadataCallback = ::updateTrackInfo
+            updateUI(service.status)
             // Show any metadata that arrived before we bound
-            radioService?.let { updateTrackInfo(it.currentTitle, it.currentArtist) }
+            updateTrackInfo(service.currentTitle, service.currentArtist)
         }
 
         override fun onServiceDisconnected(name: ComponentName) {
-            serviceBound = false
             radioService = null
+            updateUI(Status.STOPPED)
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { view, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            WindowInsetsCompat.CONSUMED
+        }
+
         requestNotificationPermission()
 
-        binding.btnPlayPause.setOnClickListener {
-            togglePlayback()
-        }
+        binding.btnPlayStop.setOnClickListener { togglePlayback() }
+        binding.tvStatus.setOnClickListener { requestPlay() } // "↻ Live": jump back to the live edge
+        binding.btnWebsite.setOnClickListener { openUrl("https://www.space101fm.org/") }
+        binding.btnDonate.setOnClickListener { openUrl("https://www.space101fm.org/donate/") }
 
-        binding.btnWebsite.setOnClickListener {
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.space101fm.org/")))
-        }
-        binding.btnDonate.setOnClickListener {
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.space101fm.org/donate/")))
-        }
+        updateUI(Status.STOPPED)
     }
 
     private fun togglePlayback() {
-        val service = radioService
-        if (service == null) {
-            startAndBindService()
-            return
-        }
-        if (service.isPlaying() || service.isLoading()) {
-            service.stop()
-            unbindService()
-        } else {
-            service.play()
+        when (radioService?.status) {
+            Status.PLAYING, Status.BUFFERING, Status.RECONNECTING -> radioService?.stop()
+            else -> requestPlay()
         }
     }
 
-    private fun startAndBindService() {
-        val intent = Intent(this, RadioService::class.java).apply {
-            action = RadioService.ACTION_PLAY
-        }
-        ContextCompat.startForegroundService(this, intent)
-        bindService(
-            Intent(this, RadioService::class.java),
-            serviceConnection,
-            Context.BIND_AUTO_CREATE
+    /**
+     * Always go through startForegroundService so the service is "started", not merely bound;
+     * otherwise it would be destroyed (and playback cut) as soon as the activity unbinds.
+     */
+    private fun requestPlay() {
+        ContextCompat.startForegroundService(
+            this,
+            Intent(this, RadioService::class.java).setAction(RadioService.ACTION_PLAY)
         )
     }
 
-    private fun unbindService() {
-        if (serviceBound) {
-            unbindService(serviceConnection)
-            serviceBound = false
-            radioService = null
-        }
-        updateUI(false, false)
+    private fun openUrl(url: String) {
+        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
     }
 
     private fun updateTrackInfo(title: String, artist: String) {
@@ -101,61 +95,77 @@ class MainActivity : AppCompatActivity() {
         binding.tvTrackArtist.text = artist
         binding.tvTrackTitle.visibility = if (title.isNotEmpty()) View.VISIBLE else View.GONE
         binding.tvTrackArtist.visibility = if (artist.isNotEmpty()) View.VISIBLE else View.GONE
+        binding.tvTrackTitle.isSelected = true // starts the marquee
     }
 
-    private fun updateUI(isPlaying: Boolean, isLoading: Boolean) {
-        when {
-            isLoading -> {
-                binding.btnPlayPause.visibility = View.INVISIBLE
-                binding.progressBar.visibility = View.VISIBLE
-                binding.tvStatus.text = "Buffering..."
+    private fun updateUI(status: Status) {
+        val active = status == Status.PLAYING || status == Status.BUFFERING || status == Status.RECONNECTING
+        binding.btnPlayStop.setImageResource(if (active) R.drawable.ic_media_stop else R.drawable.ic_media_play)
+        binding.btnPlayStop.contentDescription = getString(if (active) R.string.action_stop else R.string.action_play)
+
+        binding.tvStatus.setText(when (status) {
+            Status.PLAYING -> R.string.status_live
+            Status.BUFFERING -> R.string.status_buffering
+            Status.RECONNECTING -> R.string.status_reconnecting
+            Status.PAUSED -> R.string.status_paused
+            Status.FAILED -> R.string.status_failed
+            Status.STOPPED -> R.string.status_idle
+        })
+
+        val live = status == Status.PLAYING
+        binding.tvStatus.isClickable = live
+        binding.tvStatus.contentDescription = if (live) getString(R.string.sync_to_live) else null
+        if (live) binding.tvStatus.setBackgroundResource(R.drawable.link_bg) else binding.tvStatus.background = null
+
+        if (live) startPulseAnimation() else stopPulseAnimation()
+        if (!active && status != Status.PAUSED) updateTrackInfo("", "")
+    }
+
+    private fun startPulseAnimation() {
+        if (pulseAnimator?.isRunning == true) return
+        val ring = binding.pulseRing
+        fun pulse(property: android.util.Property<View, Float>, vararg values: Float) =
+            ObjectAnimator.ofFloat(ring, property, *values).apply {
+                duration = 2000; repeatMode = ValueAnimator.REVERSE; repeatCount = ValueAnimator.INFINITE
             }
-            isPlaying -> {
-                binding.btnPlayPause.visibility = View.VISIBLE
-                binding.progressBar.visibility = View.GONE
-                binding.btnPlayPause.setImageResource(R.drawable.ic_media_stop)
-                binding.tvStatus.text = "Live"
-            }
-            else -> {
-                binding.btnPlayPause.visibility = View.VISIBLE
-                binding.progressBar.visibility = View.GONE
-                binding.btnPlayPause.setImageResource(android.R.drawable.ic_media_play)
-                binding.tvStatus.text = "Tap to listen"
-                updateTrackInfo("", "")
-            }
+        pulseAnimator = AnimatorSet().apply {
+            playTogether(pulse(View.SCALE_X, 1f, 1.14f), pulse(View.SCALE_Y, 1f, 1.14f), pulse(View.ALPHA, 0.85f, 0.2f))
+            start()
         }
     }
 
+    private fun stopPulseAnimation() {
+        pulseAnimator?.cancel()
+        pulseAnimator = null
+        binding.pulseRing.scaleX = 1f
+        binding.pulseRing.scaleY = 1f
+        binding.pulseRing.alpha = 1f
+    }
+
     private fun requestNotificationPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(
-                    this,
-                    android.Manifest.permission.POST_NOTIFICATIONS
-                ) != PackageManager.PERMISSION_GRANTED
-            ) {
-                ActivityCompat.requestPermissions(
-                    this,
-                    arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
-                    100
-                )
-            }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            ActivityCompat.requestPermissions(this, arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 100)
         }
     }
 
     override fun onStart() {
         super.onStart()
-        // Re-bind if service is already running
-        val intent = Intent(this, RadioService::class.java)
-        bindService(intent, serviceConnection, 0)
+        // Flags = 0: attach to the service whenever it is running, but never create it just by binding.
+        serviceBound = bindService(Intent(this, RadioService::class.java), serviceConnection, 0)
     }
 
     override fun onStop() {
         super.onStop()
+        stopPulseAnimation()
         if (serviceBound) {
-            radioService?.playerStateCallback = null
+            radioService?.statusCallback = null
             radioService?.metadataCallback = null
             unbindService(serviceConnection)
             serviceBound = false
+            radioService = null
         }
     }
 }

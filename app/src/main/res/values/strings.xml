@@ -1,4 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Space 101.1</string>
+    <string name="station_name">Space 101.1 FM</string>
+    <string name="station_tagline">KMGP · Seattle</string>
+    <string name="logo_description">Space 101.1 FM logo</string>
+
+    <string name="status_idle">Tap to listen</string>
+    <string name="status_buffering">Buffering…</string>
+    <string name="status_reconnecting">Reconnecting…</string>
+    <string name="status_live">↻ Live</string>
+    <string name="status_paused">Paused</string>
+    <string name="status_failed">Can\'t reach the stream. Tap to retry</string>
+    <string name="notif_live">Live</string>
+
+    <string name="action_play">Play</string>
+    <string name="action_stop">Stop</string>
+    <string name="sync_to_live">Jump to live</string>
+    <string name="link_website">Website</string>
+    <string name="link_donate">Donate</string>
+
+    <string name="channel_name">Radio Playback</string>
+    <string name="channel_description">Space 101.1 FM playback controls</string>
 </resources>

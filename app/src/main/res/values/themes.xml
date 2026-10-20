@@ -1,11 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.Space101" parent="Theme.MaterialComponents.NoActionBar">
-        <item name="colorPrimary">#3333AA</item>
-        <item name="colorPrimaryVariant">#1A1A88</item>
-        <item name="colorOnPrimary">#FFFFFF</item>
-        <item name="android:windowBackground">#0A0A1A</item>
-        <item name="android:statusBarColor">#0A0A1A</item>
-        <item name="android:navigationBarColor">#0A0A1A</item>
+        <item name="colorPrimary">@color/logo_blue</item>
+        <item name="colorPrimaryVariant">@color/logo_blue</item>
+        <item name="colorOnPrimary">@color/text_primary</item>
+        <item name="colorAccent">@color/logo_sage</item>
+        <item name="android:windowBackground">@color/space_bg</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
     </style>
 </resources>

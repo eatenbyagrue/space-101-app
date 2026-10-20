@@ -4,7 +4,7 @@ An unofficial Android app for streaming [Space 101.1 FM](https://www.space101fm.
 
 ## About
 
-No-frills streaming app. One play button, two links. No ads, no tracking, no data collection.
+No-frills streaming app. One play button, two links, and the song that's playing now (also shown on the lock screen and in your car over Bluetooth). No ads, no tracking, no data collection.
 
 
 ## Sideloading
@@ -13,7 +13,9 @@ No app store required. You can install it directly on any Android phone (7.0+).
 
 **Step 1 — Download the APK**
 
-Grab the latest `app-debug.apk` from the [Releases](../../releases) page.
+Grab the latest `app-release.apk` from the [Releases](../../releases) page.
+
+> Upgrading from v0.1.0 (`app-debug.apk`)? Uninstall the old version first. Later versions are signed with a different key, so Android won't install them over it. After that one uninstall, future versions update in place.
 
 **Step 2 — Allow installs from unknown sources**
 
@@ -35,6 +37,9 @@ Requires Android SDK and JDK 17+.
 
 # Install on connected device
 adb install -r app/build/outputs/apk/debug/app-debug.apk
+
+# Release build (signed only if you supply your own keystore.properties; see CLAUDE.md)
+./gradlew assembleRelease
 ```
 
 See [CLAUDE.md](CLAUDE.md) for full development notes.

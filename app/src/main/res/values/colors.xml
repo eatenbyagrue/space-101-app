@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Sampled from the station logo -->
+    <color name="logo_blue">#365F93</color>
+    <color name="logo_sage">#99B9AA</color>
+
+    <color name="space_bg">#0B1424</color>
+    <color name="text_primary">#FFFFFF</color>
+    <color name="text_secondary">#8FA8C8</color>
+    <color name="divider">#22344F</color>
+    <color name="ripple">#3399B9AA</color>
+</resources>
